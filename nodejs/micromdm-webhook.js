@@ -4,14 +4,17 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const https = require('https');
 const url = require('url');
+var format = require('xml-formatter');
 
 const app = express().use(bodyParser.json({limit: '50mb'}));
 const server = {
     'server_url': '',
     'api_token': '',
-    'port': 80,
+    'port': 5000,
     'devices': {},
 }
+
+const cloudWatchParam = require('./cloudWatch.json');
 
 app.post('/webhook', (req, res) => {
     var event = req.body
@@ -39,14 +42,18 @@ app.post('/webhook', (req, res) => {
  */
 function handleAuthenticate(event) {
     var udid = event.checkin_event.udid
+    var payload = decodeBase64(event.chechin_event.raw_payload);
 
-    if (udid in server.devices) {
+    postEventInCloudWatch(udid, payload);
+
+    /*if (udid in server.devices) {
         console.log('re-enrolling device ' + udid)
     } else {
         console.log('enrolling new device ' + udid)
-    }
+    }*/
 
-    insertOrUpdateDevice(udid, false)
+
+    //insertOrUpdateDevice(udid, false)
 }
 
 /**
@@ -58,10 +65,13 @@ function handleAuthenticate(event) {
  * @param {*} event The webhook event 
  */
 function handleTokenUpdate(event) {
-    var udid = event.checkin_event.udid
-    insertOrUpdateDevice(udid, true)
+    var udid = event.checkin_event.udid;
+    var payload = decodeBase64(event.chechin_event.raw_payload);
 
-    sendCommandToDevice(udid, "InstalledApplicationList")
+    postEventInCloudWatch(udid, payload);
+    /*insertOrUpdateDevice(udid, true)	
+
+    sendCommandToDevice(udid, "InstalledApplicationList")*/
 }
 
 /**
@@ -72,10 +82,15 @@ function handleTokenUpdate(event) {
  * @param {*} event The webhook event 
  */
 function handleConnect(event) {
-    var xml = Buffer.from(event.acknowledge_event.raw_payload, 'base64').toString("ascii")
+    var udid = event.acknowledge_event.udid;
+    var payload = decodeBase64(event.acknowledge_event.raw_payload);
+
+    //var xml = format(payload);
+    postEventInCloudWatch(udid, payload);
+    /*var xml = Buffer.from(event.acknowledge_event.raw_payload, 'base64').toString('utf8')
     if (xml.indexOf('InstalledApplicationList') > -1) {
         console.log(xml)
-    }
+    }*/
 }
 
 /**
@@ -86,7 +101,11 @@ function handleConnect(event) {
  */
 function handleCheckOut(event) {
     var udid = event.checkin_event.udid
-    insertOrUpdateDevice(udid, false)
+
+    var payload = decodeBase64(event.acknowledge_event.raw_payload);
+
+    postEventInCloudWatch(udid, payload);
+    //insertOrUpdateDevice(udid, false)
 }
 
 function insertOrUpdateDevice(udid, enrolled) {
@@ -100,13 +119,42 @@ function insertOrUpdateDevice(udid, enrolled) {
     }
 }
 
+function postEventInCloudWatch(udid, payload) {
+
+    var command = JSON.stringify({
+        'device': udid,
+        'payload': payload
+    });
+
+    console.log(payload);
+
+    var serverURL = url.parse(cloudWatchParam.server_url);
+    var options = {
+      hostname: serverURL.hostname,
+      port: 443,
+      path: cloudWatchParam.resource,
+      method: cloudWatchParam.method,
+      headers: {
+           'Content-Type': 'Content-type: application/json; charset=utf-8',
+           'x-api-key': cloudWatchParam.api_key
+         }
+    };
+
+    var req = https.request(options, null);
+    req.on('error', (e) => {
+        console.error(e);
+    })
+    req.write(command);
+    req.end();
+}
+
 function sendCommandToDevice(udid, requestType) {
     var command = JSON.stringify({
         'udid': udid,
         'request_type': requestType,
     })
 
-    var serverURL = new URL(server.server_url)
+    var serverURL = url.parse(server.server_url);
     var auth = 'Basic ' + Buffer.from('micromdm:' + server.api_token).toString('base64');
     var options = {
       hostname: serverURL.hostname,
@@ -128,8 +176,13 @@ function sendCommandToDevice(udid, requestType) {
     req.end()
 }
 
+function decodeBase64(data) {
+    let buff = new Buffer(data, 'base64');  
+    return buff.toString('utf8');
+}
+
 function main() {
-    parseArgs()
+    parseArgs();
     app.listen(server.port, () => console.log('server started on port ' + server.port));
 }
 

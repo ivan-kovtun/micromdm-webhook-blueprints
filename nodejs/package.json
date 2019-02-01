@@ -1,7 +1,6 @@
 {
   "name": "micromdm-webhook",
   "version": "1.0.0",
-  "description": "",
   "main": "micromdm-webhook.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
@@ -11,6 +10,8 @@
   "license": "MIT",
   "dependencies": {
     "body-parser": "^1.18.3",
-    "express": "^4.16.3"
-  }
+    "express": "^4.16.3",
+    "xml-formatter": "^1.0.1"
+  },
+  "description": ""
 }
